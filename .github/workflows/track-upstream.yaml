@@ -1,7 +1,7 @@
 ---
 # Bump the app to the newest upstream release, once a day and on demand.
-# The Supervisor builds the image itself, so the only thing to publish is a
-# higher version in config.yaml plus the matching image tag in the Dockerfile.
+# The Supervisor builds the image itself, so publishing means a higher version
+# in config.yaml plus the upstream image tag in the Dockerfile, then a push.
 name: Track the upstream release
 
 on:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Force this version instead of the upstream tag, e.g. 1.24.5"
+        description: "Publish this app version instead of the upstream tag"
         required: false
         type: string
 
@@ -32,28 +32,27 @@ jobs:
           set -euo pipefail
           current=$(sed -n 's/^version: "\(.*\)"$/\1/p' \
             pmss-fleet-manager/config.yaml)
-          if [ -n "${FORCED}" ]; then
-            version=${FORCED#v}
-            echo "forced to ${version}"
-          else
-            tag=$(gh release view --repo AlteredParadox/pmss-fleet-manager \
-              --json tagName -q .tagName)
-            version=${tag#v}
-          fi
-          echo "upstream=${version} current=${current}"
+          # Upstream tags each release X.Y.Z and publishes the image under that
+          # same tag, so the image and the release share a number.
+          tag=$(gh release view --repo AlteredParadox/pmss-fleet-manager \
+            --json tagName -q .tagName)
+          upstream=${tag#v}
+          version=${FORCED:+${FORCED#v}}
+          version=${version:-$upstream}
+          echo "upstream=${upstream} wanted=${version} current=${current}"
           if [ "$version" = "$current" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           elif [ -z "${FORCED}" ] &&
             [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" \
               != "$version" ]; then
-            # Upstream only moved forward in a minor we are already past, which
-            # happens because add-on-only fixes share the same numbering. Force
-            # the version by hand when that release matters.
+            # Upstream is behind because add-on-only fixes share this numbering.
+            # Force the version by hand when an older release must be taken.
             echo "::warning::upstream ${version} is not above ${current}, staying"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "version=${version}" >> "$GITHUB_OUTPUT"
+            echo "image=${upstream}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check the image exists
@@ -63,18 +62,19 @@ jobs:
           # A release is published a moment before its image is, so failing
           # here just means tomorrow's run tries again.
           docker manifest inspect \
-            "ghcr.io/alteredparadox/pmss-fleet-manager:${{ steps.pick.outputs.version }}" \
+            "ghcr.io/alteredparadox/pmss-fleet-manager:${{ steps.pick.outputs.image }}" \
             > /dev/null
 
-      - name: Bump the version and the image tag
+      - name: Write the version and the image tag
         if: steps.pick.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.pick.outputs.version }}
+          IMAGE: ${{ steps.pick.outputs.image }}
         run: |
           set -euo pipefail
           sed -i "s/^version: \".*\"$/version: \"${VERSION}\"/" \
             pmss-fleet-manager/config.yaml
-          sed -i "s|^ARG UPSTREAM_IMAGE=.*|ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:${VERSION}|" \
+          sed -i "s|^ARG UPSTREAM_IMAGE=.*|ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:${IMAGE}|" \
             pmss-fleet-manager/Dockerfile
           git diff --stat
 
@@ -86,5 +86,5 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "Bump to ${VERSION}"
+          git commit -am "Publish ${VERSION}"
           git push
