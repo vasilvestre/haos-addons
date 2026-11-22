@@ -16,10 +16,10 @@ installed from the Home Assistant app store by URL.
 4. Fill the options (see below), then start it.
 
 Open it from its own page in the app store, or directly on
-`http://<home-assistant-ip>:8088/` from a phone or another computer.
+`http://<home-assistant-ip>:8099/` from a phone or another computer.
 
 The dashboard sends `frame-ancestors 'none'`, so it cannot be embedded: there is
-no sidebar panel and no ingress, and the app opens in its own tab. Port 8088 is
+no sidebar panel and no ingress, and the app opens in its own tab. Port 8099 is
 used because 8080 on a Home Assistant box is often taken.
 
 ## PMSS Fleet Manager options
