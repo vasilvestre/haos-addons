@@ -62,19 +62,45 @@ git clone git@github.com:vasilvestre/haos-addons.git && cd haos-addons
 
 ## Updates
 
-`.github/workflows/track-upstream.yaml` checks the upstream releases once a
-day at 05:17 UTC and on demand from the Actions tab. When a newer tag exists, it
-writes that version into `pmss-fleet-manager/config.yaml` and the matching image
-tag into the `Dockerfile`, then commits and pushes. Home Assistant then shows the
-app as updatable; nothing builds here, the Supervisor builds it.
+Two numbers drive this app, and they mean different things.
 
-Run it by hand with:
+**The image tag** in the `Dockerfile` names an upstream release image that
+exists on `ghcr.io`:
+
+```
+ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:1.24.0
+```
+
+**The store version** in `config.yaml` counts our own publications. It is the
+upstream release plus a revision:
+
+```
+version: "1.24.0.6"
+```
+
+Read `1.24.0.6` as "the sixth build of this app on top of upstream `1.24.0`".
+The two are kept apart on purpose:
+
+- Upstream publishes only round tags (`1.24.0`, then `1.25.0`), so a build of
+  ours that fixes a port or an option has nothing to name itself after. Bumping
+  the revision says what changed; the image keeps its real tag.
+- The Supervisor compares store versions, never commits. Every publish needs a
+  version above the last one, and a revision always is.
+- An upstream release always sorts above the revisions of the older release,
+  because `1.25.0.1` is above `1.24.0.6`.
+
+The workflow `.github/workflows/track-upstream.yaml` runs once a day at 05:17
+UTC, and on demand. It compares the image tag with the newest upstream release,
+never with the store version. When they differ, it pins the new image and writes
+`<upstream>.1`, then commits and pushes. Nothing builds here: the Supervisor
+builds the image when you install the update.
+
+For an app-only change, edit `config.yaml` yourself and raise the last number:
+`1.24.0.6` becomes `1.24.0.7`. Do not touch the image tag unless upstream moved.
+
+Run the workflow by hand with:
 
 ```bash
 gh workflow run track-upstream.yaml --repo vasilvestre/haos-addons
 gh run list --repo vasilvestre/haos-addons --limit 1
 ```
-
-Add-on-only fixes need a version above the current one, since the Supervisor
-compares versions and not commits. Use the next patch, or append a fourth
-number.
