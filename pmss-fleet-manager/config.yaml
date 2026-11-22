@@ -1,5 +1,5 @@
 name: PMSS Fleet Manager
-version: "1.24.1"
+version: "1.24.2"
 slug: pmss_fleet_manager
 description: Dashboard for a fleet of Pulsed Media seedboxes, read over SSH
 url: https://github.com/AlteredParadox/pmss-fleet-manager
@@ -9,9 +9,6 @@ arch:
 init: false
 startup: application
 boot: auto
-ingress: true
-ingress_port: 8080
-ingress_stream: true
 panel_icon: mdi:server-network
 panel_title: PMSS Fleet
 watchdog: tcp://[HOST]:8088

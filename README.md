@@ -15,9 +15,12 @@ installed from the Home Assistant app store by URL.
 3. Find **PMSS Fleet Manager** in the store and install it.
 4. Fill the options (see below), then start it.
 
-The app appears in the sidebar as **PMSS Fleet**. It also answers on
-`http://<home-assistant-ip>:8088/` for a phone or a browser outside Home
-Assistant.
+Open it from its own page in the app store, or directly on
+`http://<home-assistant-ip>:8088/` from a phone or another computer.
+
+The dashboard sends `frame-ancestors 'none'`, so it cannot be embedded: there is
+no sidebar panel and no ingress, and the app opens in its own tab. Port 8088 is
+used because 8080 on a Home Assistant box is often taken.
 
 ## PMSS Fleet Manager options
 

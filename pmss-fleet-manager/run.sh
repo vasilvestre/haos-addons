@@ -35,18 +35,8 @@ elif [ ! -s "${KEY}" ]; then
     echo "warning: no ssh_key option set, boxes that need key authentication will not answer"
 fi
 
-# Home Assistant ingress serves the dashboard under a path it picks at
-# runtime, so the app is told the prefix once it is known. Without the
-# Supervisor (plain docker run) there is no prefix and none is set.
-if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
-    BASE_PATH="$(bashio::app.ingress_entry 2>/dev/null)" || BASE_PATH=""
-else
-    BASE_PATH=""
-fi
-if [ -n "${BASE_PATH:-}" ]; then
-    export PMSS_BASE_PATH="${BASE_PATH}"
-fi
-
+# The dashboard refuses to be framed, so Home Assistant ingress cannot show
+# it. The app is opened from its own page instead, on its own port.
 LOGIN="$(option '.login')"
 if [ -n "${LOGIN}" ]; then
     printf '%s' "${LOGIN}" > "${DIR}/auth"
@@ -56,7 +46,7 @@ else
     echo "warning: no login option set, the dashboard will accept anyone who reaches it"
 fi
 
-HOSTS="homeassistant,homeassistant.local,localhost"
+HOSTS="homeassistant,homeassistant.local,localhost,vasilvestre.duckdns.org"
 EXTRA="$(option '.allowed_hosts')"
 if [ -n "${EXTRA}" ]; then
     HOSTS="${HOSTS},${EXTRA}"
