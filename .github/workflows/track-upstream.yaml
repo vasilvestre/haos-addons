@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Force this version instead of the upstream tag, e.g. 1.24.5"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -18,23 +23,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read the newest upstream tag
-        id: upstream
+      - name: Pick the version to publish
+        id: pick
         env:
           GH_TOKEN: ${{ github.token }}
+          FORCED: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          tag=$(gh release view --repo AlteredParadox/pmss-fleet-manager \
-            --json tagName -q .tagName)
-          version=${tag#v}
           current=$(sed -n 's/^version: "\(.*\)"$/\1/p' \
             pmss-fleet-manager/config.yaml)
+          if [ -n "${FORCED}" ]; then
+            version=${FORCED#v}
+            echo "forced to ${version}"
+          else
+            tag=$(gh release view --repo AlteredParadox/pmss-fleet-manager \
+              --json tagName -q .tagName)
+            version=${tag#v}
+          fi
           echo "upstream=${version} current=${current}"
           if [ "$version" = "$current" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-          elif [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" \
-            != "$version" ]; then
-            echo "::warning::upstream ${version} is older than ${current}, staying"
+          elif [ -z "${FORCED}" ] &&
+            [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" \
+              != "$version" ]; then
+            # Upstream only moved forward in a minor we are already past, which
+            # happens because add-on-only fixes share the same numbering. Force
+            # the version by hand when that release matters.
+            echo "::warning::upstream ${version} is not above ${current}, staying"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -42,19 +57,19 @@ jobs:
           fi
 
       - name: Check the image exists
-        if: steps.upstream.outputs.changed == 'true'
+        if: steps.pick.outputs.changed == 'true'
         run: |
           set -euo pipefail
           # A release is published a moment before its image is, so failing
           # here just means tomorrow's run tries again.
           docker manifest inspect \
-            "ghcr.io/alteredparadox/pmss-fleet-manager:${{ steps.upstream.outputs.version }}" \
+            "ghcr.io/alteredparadox/pmss-fleet-manager:${{ steps.pick.outputs.version }}" \
             > /dev/null
 
       - name: Bump the version and the image tag
-        if: steps.upstream.outputs.changed == 'true'
+        if: steps.pick.outputs.changed == 'true'
         env:
-          VERSION: ${{ steps.upstream.outputs.version }}
+          VERSION: ${{ steps.pick.outputs.version }}
         run: |
           set -euo pipefail
           sed -i "s/^version: \".*\"$/version: \"${VERSION}\"/" \
@@ -64,12 +79,12 @@ jobs:
           git diff --stat
 
       - name: Commit
-        if: steps.upstream.outputs.changed == 'true'
+        if: steps.pick.outputs.changed == 'true'
         env:
-          VERSION: ${{ steps.upstream.outputs.version }}
+          VERSION: ${{ steps.pick.outputs.version }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "Bump to upstream ${VERSION}"
+          git commit -am "Bump to ${VERSION}"
           git push
