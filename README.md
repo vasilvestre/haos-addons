@@ -59,3 +59,22 @@ carries. To update:
 ```bash
 git clone git@github.com:vasilvestre/haos-addons.git && cd haos-addons
 ```
+
+## Updates
+
+`.github/workflows/track-upstream.yaml` checks the upstream releases once a
+day at 05:17 UTC and on demand from the Actions tab. When a newer tag exists, it
+writes that version into `pmss-fleet-manager/config.yaml` and the matching image
+tag into the `Dockerfile`, then commits and pushes. Home Assistant then shows the
+app as updatable; nothing builds here, the Supervisor builds it.
+
+Run it by hand with:
+
+```bash
+gh workflow run track-upstream.yaml --repo vasilvestre/haos-addons
+gh run list --repo vasilvestre/haos-addons --limit 1
+```
+
+Add-on-only fixes need a version above the current one, since the Supervisor
+compares versions and not commits. Use the next patch, or append a fourth
+number.

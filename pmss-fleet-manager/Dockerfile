@@ -2,7 +2,7 @@
 # pinned per version, and the app still gets a shell: the upstream image is
 # distroless and cannot read its options or write a secret.
 ARG BUILD_FROM
-ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:1.24
+ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:1.24.4
 
 FROM ${UPSTREAM_IMAGE} AS upstream
 

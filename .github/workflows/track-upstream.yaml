@@ -1,0 +1,75 @@
+---
+# Bump the app to the newest upstream release, once a day and on demand.
+# The Supervisor builds the image itself, so the only thing to publish is a
+# higher version in config.yaml plus the matching image tag in the Dockerfile.
+name: Track the upstream release
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the newest upstream tag
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo AlteredParadox/pmss-fleet-manager \
+            --json tagName -q .tagName)
+          version=${tag#v}
+          current=$(sed -n 's/^version: "\(.*\)"$/\1/p' \
+            pmss-fleet-manager/config.yaml)
+          echo "upstream=${version} current=${current}"
+          if [ "$version" = "$current" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" \
+            != "$version" ]; then
+            echo "::warning::upstream ${version} is older than ${current}, staying"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the image exists
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          # A release is published a moment before its image is, so failing
+          # here just means tomorrow's run tries again.
+          docker manifest inspect \
+            "ghcr.io/alteredparadox/pmss-fleet-manager:${{ steps.upstream.outputs.version }}" \
+            > /dev/null
+
+      - name: Bump the version and the image tag
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+        run: |
+          set -euo pipefail
+          sed -i "s/^version: \".*\"$/version: \"${VERSION}\"/" \
+            pmss-fleet-manager/config.yaml
+          sed -i "s|^ARG UPSTREAM_IMAGE=.*|ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:${VERSION}|" \
+            pmss-fleet-manager/Dockerfile
+          git diff --stat
+
+      - name: Commit
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "Bump to upstream ${VERSION}"
+          git push
