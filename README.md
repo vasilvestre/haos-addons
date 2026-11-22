@@ -16,7 +16,7 @@ installed from the Home Assistant app store by URL.
 4. Fill the options (see below), then start it.
 
 The app appears in the sidebar as **PMSS Fleet**. It also answers on
-`http://<home-assistant-ip>:8080/` for a phone or a browser outside Home
+`http://<home-assistant-ip>:8088/` for a phone or a browser outside Home
 Assistant.
 
 ## PMSS Fleet Manager options

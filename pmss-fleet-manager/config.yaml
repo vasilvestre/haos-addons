@@ -1,5 +1,5 @@
 name: PMSS Fleet Manager
-version: "1.24.0"
+version: "1.24.1"
 slug: pmss_fleet_manager
 description: Dashboard for a fleet of Pulsed Media seedboxes, read over SSH
 url: https://github.com/AlteredParadox/pmss-fleet-manager
@@ -14,12 +14,12 @@ ingress_port: 8080
 ingress_stream: true
 panel_icon: mdi:server-network
 panel_title: PMSS Fleet
-watchdog: tcp://[HOST]:[PORT:8080]
+watchdog: tcp://[HOST]:8088
 ports:
-  8080/tcp: 8080
+  8080/tcp: 8088
 ports_description:
-  8080/tcp: Direct access on the LAN, without Home Assistant in the path
-webui: http://[HOST]:[PORT:8080]/
+  8080/tcp: "Direct access on port 8088, without Home Assistant in the path"
+webui: http://[HOST]:8088/
 options:
   login: ""
   ssh_key: ""
