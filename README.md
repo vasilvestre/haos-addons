@@ -15,20 +15,23 @@ installed from the Home Assistant app store by URL.
 3. Find **PMSS Fleet Manager** in the store and install it.
 4. Fill the options (see below), then start it.
 
-Open it from the sidebar panel, from the app page with **Open Web UI**, or
-directly on `http://<home-assistant-ip>:8099/` from a phone or another computer.
+Open it from the sidebar panel (enable **Show in sidebar**), or publicly at
+`https://fleet.vasilvestre.duckdns.org/`, where a reverse proxy asks for the
+login before the dashboard.
 
-The app runs behind ingress, so Home Assistant shows the dashboard in a sidebar
-panel on its own origin, with the Home Assistant login. The dashboard refuses to
-be framed by default; the app lifts that for the Home Assistant origin at start,
-so enable **Show in sidebar** to get the panel. The direct port 8099 stays for a
-reverse proxy, because 8080 on a Home Assistant box is often taken.
+The dashboard refuses to be framed by default because it holds the seedbox SSH
+keys. The app lifts that for Home Assistant's origin at start, so the ingress
+panel works and Home Assistant authenticates it. Leave the `login` option empty
+for that: the ingress shares Home Assistant's origin, and a browser Basic-auth
+challenge there would send those credentials to Home Assistant itself and break
+it. The public hostname carries the login at the reverse proxy instead (the
+`Caddyfile` in the `~/homelab` repository).
 
 ## PMSS Fleet Manager options
 
 | Option | Meaning |
 |---|---|
-| `login` | `user:password` the dashboard asks for. Empty means no login at all, and the app warns in its log. |
+| `login` | Leave empty for ingress: Home Assistant authenticates the panel. Setting `user:password` makes the dashboard ask for it itself, which breaks the ingress panel (same origin as Home Assistant) but protects a port exposed without a proxy. |
 | `ssh_key` | Private key used to reach the seedboxes, in OpenSSH format, pasted whole. Boxes configured with password authentication ignore it. |
 | `allowed_hosts` | Extra host names the dashboard accepts, comma-separated, for example `pi.local`. IP addresses and `localhost` are always accepted. |
 
