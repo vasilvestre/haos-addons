@@ -1,5 +1,5 @@
 name: PMSS Fleet Manager
-version: "1.25.0.1"
+version: "1.25.0.2"
 slug: pmss_fleet_manager
 description: Dashboard for a fleet of Pulsed Media seedboxes, read over SSH
 url: https://github.com/AlteredParadox/pmss-fleet-manager

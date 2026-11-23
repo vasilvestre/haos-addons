@@ -1,4 +1,5 @@
-- 1.25.0.1: carries upstream 1.25.0; ingress panel, and the CSP lets Home Assistant frame the dashboard
+- 1.25.0.2: ingress panel; the CSP lets Home Assistant frame the dashboard, and a gate checks the ports before a push
+- 1.25.0.1: carries upstream 1.25.0
 - 1.24.0.6: the store version counts our own publications on top of the upstream release, instead of following the image tag
 - 1.24.5: republishes 1.24.4 under a new store version so Home Assistant offers the update
 - 1.24.4: image pinned to the upstream release it came from, instead of the moving latest tag; direct access moved to port 8099
