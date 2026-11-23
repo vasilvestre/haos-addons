@@ -1,0 +1,217 @@
+---
+# Gate every push to main and every pull request before Home Assistant sees it.
+#
+# Four numbers used to drift apart with nothing to catch them: the store
+# version, the image tag, the port the app serves and the port the Supervisor
+# watches. Each check here names the file and the value to fix.
+name: Validate the app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Read the store version and the image tag
+        id: read
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version: "\(.*\)"$/\1/p' \
+            pmss-fleet-manager/config.yaml)
+          image=$(sed -n 's|^ARG UPSTREAM_IMAGE=\(.*\)$|\1|p' \
+            pmss-fleet-manager/Dockerfile)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "tag=${image##*:}" >> "$GITHUB_OUTPUT"
+          {
+            echo "store version: ${version}"
+            echo "image:         ${image}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the store version is <upstream>.<revision>
+        env:
+          VERSION: ${{ steps.read.outputs.version }}
+          TAG: ${{ steps.read.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=pmss-fleet-manager/config.yaml::version '${VERSION}' must be <major>.<minor>.<patch>.<revision>."
+            exit 1
+          fi
+          if [ "${VERSION%.*}" != "${TAG}" ]; then
+            echo "::error file=pmss-fleet-manager/config.yaml::version '${VERSION}' must start with the image tag; use '${TAG}.N' to match ${TAG}."
+            exit 1
+          fi
+
+      - name: Check the image tag exists
+        env:
+          IMAGE: ${{ steps.read.outputs.image }}
+        run: |
+          set -euo pipefail
+          if ! docker manifest inspect "${IMAGE}" > /dev/null; then
+            echo "::error file=pmss-fleet-manager/Dockerfile::${IMAGE} does not exist. ARG UPSTREAM_IMAGE must name a published release tag."
+            exit 1
+          fi
+
+      - name: Check config.yaml would be accepted by the Supervisor
+        run: |
+          set -euo pipefail
+          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+          python3 - <<'PY'
+          import re
+          import sys
+
+          import yaml
+
+          app = "pmss-fleet-manager"
+          cfg = yaml.safe_load(open(f"{app}/config.yaml", encoding="utf-8"))
+          run = open(f"{app}/run.sh", encoding="utf-8").read()
+          errors = []
+
+          def report(message, path=f"{app}/config.yaml"):
+              errors.append(message)
+              print(f"::error file={path}::{message}")
+
+          for key in ("name", "version", "slug", "description", "arch",
+                      "startup", "boot", "watchdog", "webui", "ports"):
+              if not cfg.get(key):
+                  report(f"config.yaml has no '{key}'")
+
+          if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", str(cfg.get("slug", ""))):
+              report(f"slug '{cfg.get('slug')}' must be lowercase letters, digits, '_' or '-'")
+
+          arch = cfg.get("arch") or []
+          allowed = {"aarch64", "amd64", "armv7", "armhf", "i386"}
+          if not isinstance(arch, list) or not arch:
+              report("arch must be a non-empty list")
+          else:
+              unknown = sorted(set(arch) - allowed)
+              if unknown:
+                  report(f"arch has values the Supervisor rejects: {', '.join(unknown)}")
+
+          webui = str(cfg.get("webui", ""))
+          match = re.fullmatch(r"http://\[HOST\]:\[PORT:(\d+)\]/", webui)
+          if not match:
+              report(f"webui '{webui}' must look like http://[HOST]:[PORT:8080]/")
+          else:
+              port = match.group(1)
+              listen = re.search(r'PMSS_LISTEN="0\.0\.0\.0:(\d+)"', run)
+              if not listen:
+                  report('run.sh sets no PMSS_LISTEN="0.0.0.0:<port>"', f"{app}/run.sh")
+              elif listen.group(1) != port:
+                  report(f"webui addresses container port {port} but run.sh listens on {listen.group(1)}")
+              host = (cfg.get("ports") or {}).get(f"{port}/tcp")
+              if host is None:
+                  report(f"ports maps no {port}/tcp, so the webui URL reaches nothing")
+              watchdog = re.fullmatch(r"tcp://\[HOST\]:(\d+)", str(cfg.get("watchdog", "")))
+              if not watchdog:
+                  report(f"watchdog '{cfg.get('watchdog')}' must look like tcp://[HOST]:8099")
+              elif host is not None and watchdog.group(1) != str(host):
+                  report(f"watchdog watches port {watchdog.group(1)} but {port}/tcp is published on {host}")
+
+          if cfg.get("ingress"):
+              ig_port = str(cfg.get("ingress_port", "")).strip()
+              ig_listen = re.search(r'PMSS_LISTEN="0\.0\.0\.0:(\d+)"', run)
+              if not ig_port:
+                  report("ingress is on but ingress_port is not set, so the panel reaches no port")
+              elif not ig_listen:
+                  report('run.sh sets no PMSS_LISTEN="0.0.0.0:<port>"', f"{app}/run.sh")
+              elif ig_port != ig_listen.group(1):
+                  report(f"ingress_port is {ig_port} but run.sh listens on {ig_listen.group(1)}")
+
+          if errors:
+              sys.exit(1)
+          print("config.yaml agrees with run.sh and with its own ports")
+          PY
+
+      - name: Check an app change bumps the version and the changelog
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=""
+          if [ "${EVENT}" = "pull_request" ]; then
+            git fetch --no-tags origin \
+              "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+            base=$(git merge-base "origin/${BASE_REF}" HEAD)
+          elif [ -n "${BEFORE}" ] && [ "${BEFORE}" != "0000000000000000000000000000000000000000" ]; then
+            base="${BEFORE}"
+          fi
+          if [ -z "${base}" ]; then
+            echo "no base commit to compare against, skipping the bump check"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "${base}" HEAD -- pmss-fleet-manager \
+            | grep -v 'CHANGELOG.md' || true)
+          if [ -z "${changed}" ]; then
+            echo "no app change between ${base} and HEAD"
+            exit 0
+          fi
+
+          new=$(sed -n 's/^version: "\(.*\)"$/\1/p' pmss-fleet-manager/config.yaml)
+          old=$(git show "${base}:pmss-fleet-manager/config.yaml" 2>/dev/null \
+            | sed -n 's/^version: "\(.*\)"$/\1/p' || true)
+
+          if [ "${old}" = "${new}" ]; then
+            next="${old%.*}.$(( ${old##*.} + 1 ))"
+            echo "::error file=pmss-fleet-manager/config.yaml::the app changed but the store version is still ${new}, so the Supervisor installs nothing. Set it to ${next}."
+            exit 1
+          fi
+
+          if ! grep -q "^- ${new}:" pmss-fleet-manager/CHANGELOG.md; then
+            echo "::error file=pmss-fleet-manager/CHANGELOG.md::no line for ${new}. Add '- ${new}: <what changed>'."
+            exit 1
+          fi
+          echo "version ${old} -> ${new}, changelog updated"
+
+      - name: Dry-run run.sh
+        run: |
+          set -euo pipefail
+          # run.sh hardcodes /data and execs the binary; a stand-in binary
+          # proves the script gets that far and prints the environment the
+          # dashboard reads.
+          sudo mkdir -p /data
+          sudo chown -R "$(id -u):$(id -g)" /data
+          cat > /tmp/pmss-fleet-manager <<'EOF'
+          #!/bin/sh
+          echo "reached /usr/bin/pmss-fleet-manager"
+          env | grep -E '^(PMSS_[A-Z_]*|TZ)=' | sort
+          EOF
+          sudo install -m 755 /tmp/pmss-fleet-manager /usr/bin/pmss-fleet-manager
+          cat > /data/options.json <<'EOF'
+          {"login":"user:pass","ssh_key":"-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----","allowed_hosts":"pi.local"}
+          EOF
+
+          out=$(bash pmss-fleet-manager/run.sh)
+          echo "${out}"
+
+          fail() {
+            echo "::error file=pmss-fleet-manager/run.sh::$1"
+            exit 1
+          }
+          grep -qx "reached /usr/bin/pmss-fleet-manager" <<< "${out}" \
+            || fail "run.sh never reached /usr/bin/pmss-fleet-manager"
+          for want in PMSS_LISTEN=0.0.0.0:8080 PMSS_DATA=/data/pmss/data \
+            PMSS_SECRET_FILE=/data/pmss/secret PMSS_SSH_KEY=/data/pmss/ssh/id_ed25519 \
+            PMSS_AUTH_FILE=/data/pmss/auth; do
+            grep -q "^${want}$" <<< "${out}" || fail "run.sh exports no ${want}"
+          done
+          grep -q "^PMSS_ALLOWED_HOSTS=.*pi.local$" <<< "${out}" \
+            || fail "allowed_hosts option is not passed to the dashboard"
+          grep -qx "TZ=UTC" <<< "${out}" \
+            || fail "TZ is not exported"
+          echo "run.sh starts the binary with the documented environment"

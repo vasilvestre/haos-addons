@@ -1,0 +1,8 @@
+- 1.25.0.1: carries upstream 1.25.0; ingress panel, and the CSP lets Home Assistant frame the dashboard
+- 1.24.0.6: the store version counts our own publications on top of the upstream release, instead of following the image tag
+- 1.24.5: republishes 1.24.4 under a new store version so Home Assistant offers the update
+- 1.24.4: image pinned to the upstream release it came from, instead of the moving latest tag; direct access moved to port 8099
+- 1.24.3: the webui link opens the app's own port
+- 1.24.2: the dashboard opens in its own tab on its own port, without ingress, because it refused to be framed
+- 1.24.1: the app listens on port 8088
+- 1.24.0: first publication, carrying upstream 1.24

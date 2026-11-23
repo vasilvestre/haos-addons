@@ -67,9 +67,13 @@ jobs:
             pmss-fleet-manager/config.yaml
           sed -i "s|^ARG UPSTREAM_IMAGE=.*|ARG UPSTREAM_IMAGE=ghcr.io/alteredparadox/pmss-fleet-manager:${IMAGE}|" \
             pmss-fleet-manager/Dockerfile
+          # Newest first: validate looks the version up by its line.
+          { printf -- '- %s: upstream image %s\n' "${VERSION}" "${IMAGE}"
+            cat pmss-fleet-manager/CHANGELOG.md; } > /tmp/changelog.md
+          mv /tmp/changelog.md pmss-fleet-manager/CHANGELOG.md
           git diff --stat
 
-      - name: Commit
+      - name: Commit and tag
         if: steps.pick.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.pick.outputs.version }}
@@ -78,5 +82,9 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "Publish ${VERSION} on upstream image ${IMAGE}"
+          git add -A pmss-fleet-manager
+          git commit -m "Publish ${VERSION} on upstream image ${IMAGE}"
+          git tag "${VERSION}"
           git push
+          # The tag makes two installed versions a range: ${VERSION} vs the last one.
+          git push origin "${VERSION}"

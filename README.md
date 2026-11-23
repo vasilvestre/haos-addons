@@ -15,12 +15,14 @@ installed from the Home Assistant app store by URL.
 3. Find **PMSS Fleet Manager** in the store and install it.
 4. Fill the options (see below), then start it.
 
-Open it from its own page in the app store, or directly on
-`http://<home-assistant-ip>:8099/` from a phone or another computer.
+Open it from the sidebar panel, from the app page with **Open Web UI**, or
+directly on `http://<home-assistant-ip>:8099/` from a phone or another computer.
 
-The dashboard sends `frame-ancestors 'none'`, so it cannot be embedded: there is
-no sidebar panel and no ingress, and the app opens in its own tab. Port 8099 is
-used because 8080 on a Home Assistant box is often taken.
+The app runs behind ingress, so Home Assistant shows the dashboard in a sidebar
+panel on its own origin, with the Home Assistant login. The dashboard refuses to
+be framed by default; the app lifts that for the Home Assistant origin at start,
+so enable **Show in sidebar** to get the panel. The direct port 8099 stays for a
+reverse proxy, because 8080 on a Home Assistant box is often taken.
 
 ## PMSS Fleet Manager options
 
@@ -91,12 +93,15 @@ The two are kept apart on purpose:
 
 The workflow `.github/workflows/track-upstream.yaml` runs once a day at 05:17
 UTC, and on demand. It compares the image tag with the newest upstream release,
-never with the store version. When they differ, it pins the new image and writes
-`<upstream>.1`, then commits and pushes. Nothing builds here: the Supervisor
-builds the image when you install the update.
+never with the store version. When they differ, it pins the new image, writes
+`<upstream>.1`, adds a line to `pmss-fleet-manager/CHANGELOG.md`, commits,
+pushes, and tags the commit with the store version. Nothing builds here: the
+Supervisor builds the image when you install the update.
 
-For an app-only change, edit `config.yaml` yourself and raise the last number:
-`1.24.0.6` becomes `1.24.0.7`. Do not touch the image tag unless upstream moved.
+For an app-only change, edit `config.yaml` yourself, raise the last number
+(`1.24.0.6` becomes `1.24.0.7`), and add a line to
+`pmss-fleet-manager/CHANGELOG.md`. Do not touch the image tag unless upstream
+moved.
 
 Run the workflow by hand with:
 
@@ -104,3 +109,25 @@ Run the workflow by hand with:
 gh workflow run track-upstream.yaml --repo vasilvestre/haos-addons
 gh run list --repo vasilvestre/haos-addons --limit 1
 ```
+
+## What CI checks before a push reaches Home Assistant
+
+`.github/workflows/validate.yaml` runs on every push to `main` and on every pull
+request. It fails when:
+
+1. The image tag in `ARG UPSTREAM_IMAGE` does not exist on `ghcr.io`
+   (`docker manifest inspect`).
+2. `version` in `config.yaml` is not `<upstream>.<revision>`, or its first three
+   parts differ from the image tag.
+3. `config.yaml` would be rejected by the Supervisor: bad `slug`, unknown
+   `arch`, a `webui` that is not `http://[HOST]:[PORT:8080]/`, a container port
+   `run.sh` does not listen on (`PMSS_LISTEN`), an `ingress_port` that is not the
+   port `run.sh` listens on, or a `watchdog` port that is not the published port.
+4. A change under `pmss-fleet-manager/` comes without a higher store version and
+   a matching line in `CHANGELOG.md`. The error names the next version to use.
+5. `run.sh` does not reach the dashboard binary, or does not export the
+   environment it documents (`PMSS_LISTEN`, `PMSS_DATA`, `PMSS_SECRET_FILE`,
+   `PMSS_SSH_KEY`, `PMSS_AUTH_FILE`, `PMSS_ALLOWED_HOSTS`, `TZ`).
+
+To read a publication, two lines are enough: `version` in `config.yaml` and
+`ARG UPSTREAM_IMAGE` in the Dockerfile. They always agree on the upstream part.

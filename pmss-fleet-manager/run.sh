@@ -35,8 +35,9 @@ elif [ ! -s "${KEY}" ]; then
     echo "warning: no ssh_key option set, boxes that need key authentication will not answer"
 fi
 
-# The dashboard refuses to be framed, so Home Assistant ingress cannot show
-# it. The app is opened from its own page instead, on its own port.
+# The dashboard refuses to be framed by default. Home Assistant shows the app
+# inside an iframe on its own origin, so the origin is named below to lift the
+# refusal; the app is still reachable on its own port for a reverse proxy.
 LOGIN="$(option '.login')"
 if [ -n "${LOGIN}" ]; then
     printf '%s' "${LOGIN}" > "${DIR}/auth"
@@ -57,6 +58,22 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
     TZ_VALUE="$(bashio::info.timezone 2>/dev/null)" || TZ_VALUE=""
 fi
 export TZ="${TZ_VALUE:-UTC}"
+
+# Home Assistant ingress serves the app in an iframe whose origin is Home
+# Assistant's own, so frame-ancestors 'self' would allow it, but the dashboard
+# ships with 'none'. Any valid origin flips that off; take Home Assistant's
+# origin from the Supervisor when it answers, and fall back to a plain name so
+# an unreadable answer still leaves the panel usable.
+FRAME_ORIGIN="http://homeassistant"
+if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+    INGRESS_URL="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        http://supervisor/addons/self/info 2>/dev/null \
+        | jq --raw-output '.data.ingress_url // ""' 2>/dev/null)"
+    if [ -n "${INGRESS_URL}" ]; then
+        FRAME_ORIGIN="$(printf '%s' "${INGRESS_URL}" | sed -E 's#^(https?://[^/]+).*#\1#')"
+    fi
+fi
+export PMSS_FRAME_ANCESTORS="${FRAME_ORIGIN}"
 
 export PMSS_LISTEN="0.0.0.0:8080"
 export PMSS_DATA="${DIR}/data"
