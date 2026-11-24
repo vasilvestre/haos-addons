@@ -1,3 +1,4 @@
+- 1.26.0.1: upstream image 1.26.0
 - 1.25.1.1: upstream image 1.25.1
 - 1.25.0.2: ingress panel; the CSP lets Home Assistant frame the dashboard, and a gate checks the ports before a push
 - 1.25.0.1: carries upstream 1.25.0
